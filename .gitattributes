@@ -1,0 +1,21 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Python files
+*.py text diff=python
+*.pyw text diff=python
+*.pyi text diff=python
+
+# Documentation
+*.md text diff=markdown
+*.txt text
+
+# Database files
+*.db binary
+
+# Requirements
+requirements.txt text
+
+# Git files
+.gitattributes text
+.gitignore text 
