@@ -1,0 +1,2 @@
+# No se requieren dependencias externas ya que tkinter y sqlite3 vienen incluidos con Python
+# Este archivo se mantiene para futuras dependencias 
