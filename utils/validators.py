@@ -4,11 +4,7 @@ def validar_numero(valor_str, tipo='float', permitir_cero=True, permitir_vacio=F
         return 0.0 if tipo == 'float' else 0
     try:
         valor_str = str(valor_str).strip()
-        if tipo == 'float':
-            valor = float(valor_str)
-        else:  # int
-            valor = int(valor_str)
-
+        valor = float(valor_str) if tipo == 'float' else int(valor_str)
         if not permitir_cero and valor == 0:
             return None
         return valor

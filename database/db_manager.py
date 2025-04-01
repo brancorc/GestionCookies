@@ -23,6 +23,33 @@ class DatabaseManager:
         else:
             self.conn.execute("PRAGMA foreign_keys = ON")
             print("Tablas existentes cargadas.")
+            self._check_and_update_tables()
+
+    def _check_and_update_tables(self):
+        """Verifica y actualiza la estructura de las tablas si es necesario."""
+        if not self._column_exists('pedidos', 'pago'):
+            print("Añadiendo columna 'pago' a la tabla 'pedidos'...")
+            try:
+                self.cursor.execute('ALTER TABLE pedidos ADD COLUMN pago INTEGER DEFAULT 0')
+                self.conn.commit()
+                print("Columna 'pago' añadida correctamente.")
+            except sqlite3.Error as e:
+                print(f"Error al añadir columna 'pago': {e}")
+                raise Exception(f"No se pudo actualizar la tabla 'pedidos': {e}")
+        else:
+            print("Columna 'pago' ya existe.")
+
+    def _column_exists(self, table_name, column_name):
+        """Verifica si una columna existe en una tabla."""
+        if not self.cursor:
+            return False
+        try:
+            self.cursor.execute(f"PRAGMA table_info({table_name})")
+            columns = [info[1] for info in self.cursor.fetchall()]
+            return column_name in columns
+        except sqlite3.Error as e:
+            print(f"Error al verificar columna {column_name} en {table_name}: {e}")
+            return False
 
     def _create_tables(self):
         """Crea las tablas necesarias en la base de datos."""
@@ -36,6 +63,7 @@ class DatabaseManager:
                 precio_envio REAL DEFAULT 0.0,
                 direccion TEXT,
                 horario TEXT,
+                pago INTEGER DEFAULT 0,
                 fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
@@ -111,7 +139,7 @@ class DatabaseManager:
             self.conn.rollback()
             raise Exception(f"No se pudo eliminar el pedido: {e}")
 
-    def actualizar_pedido(self, pedido_id, dia, nombre, precio_pedido, precio_envio, direccion, horario, items):
+    def actualizar_pedido(self, pedido_id, dia, nombre, precio_pedido, precio_envio, direccion, horario, items, pago=0):
         """Actualiza un pedido existente y sus items."""
         try:
             self.cursor.execute("BEGIN TRANSACTION")
@@ -119,10 +147,14 @@ class DatabaseManager:
             # Actualizar datos generales
             sql_update_pedido = """
                 UPDATE pedidos
-                SET dia = ?, nombre = ?, precio_pedido = ?, precio_envio = ?, direccion = ?, horario = ?
+                SET dia = ?, nombre = ?, precio_pedido = ?, precio_envio = ?,
+                    direccion = ?, horario = ?, pago = ?
                 WHERE id = ?
             """
-            self.cursor.execute(sql_update_pedido, (dia, nombre, precio_pedido, precio_envio, direccion, horario, pedido_id))
+            self.cursor.execute(sql_update_pedido, (
+                dia, nombre, precio_pedido, precio_envio, direccion, horario,
+                pago, pedido_id
+            ))
 
             # Eliminar items antiguos
             self.cursor.execute("DELETE FROM pedido_items WHERE pedido_id = ?", (pedido_id,))
@@ -152,4 +184,22 @@ class DatabaseManager:
             pedido_dict['items'] = [dict(item) for item in items_db]
             return pedido_dict
         except sqlite3.Error as e:
-            raise Exception(f"No se pudo obtener el pedido: {e}") 
+            raise Exception(f"No se pudo obtener el pedido: {e}")
+
+    def toggle_pago_pedido(self, pedido_id):
+        """Cambia el estado de pago de un pedido."""
+        try:
+            self.cursor.execute("SELECT pago FROM pedidos WHERE id = ?", (pedido_id,))
+            result = self.cursor.fetchone()
+            if not result:
+                raise Exception("Pedido no encontrado.")
+
+            estado_actual = result['pago']
+            nuevo_estado = 1 if estado_actual == 0 else 0
+
+            self.cursor.execute("UPDATE pedidos SET pago = ? WHERE id = ?", (nuevo_estado, pedido_id))
+            self.conn.commit()
+            return nuevo_estado
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            raise Exception(f"No se pudo actualizar el estado de pago: {e}") 

@@ -8,4 +8,4 @@ SABORES_VALIDOS = [
 ]
 
 # Configuración de la interfaz
-WINDOW_TITLE = "SweetCookies Gestión de Pedidos" 
+WINDOW_TITLE = "SweetCookies Gestion de Pedidos" 

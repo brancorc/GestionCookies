@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, scrolledtext
 from collections import defaultdict
 from config.settings import SABORES_VALIDOS, WINDOW_TITLE
 from utils.validators import validar_numero
@@ -25,6 +25,13 @@ class MainWindow:
         self.main_frame = ttk.Frame(self.root, padding="10")
         self.main_frame.pack(expand=True, fill=tk.BOTH)
 
+        # Configurar Grid del main_frame
+        self.main_frame.columnconfigure(0, weight=0)
+        self.main_frame.columnconfigure(1, weight=2)
+        self.main_frame.columnconfigure(2, weight=1)
+        self.main_frame.rowconfigure(0, weight=1)
+        self.main_frame.rowconfigure(1, weight=0)
+
         # Frame para el Formulario de Entrada
         self.form_frame = ttk.LabelFrame(self.main_frame, text="Registrar Nuevo Pedido", padding="10")
         self.form_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
@@ -32,10 +39,10 @@ class MainWindow:
         self._setup_form_frame()
         self._setup_summary_frame()
         self._setup_list_frame()
+        self._setup_daily_summary_frame()
 
-        # Configurar grid weights
-        self.main_frame.columnconfigure(1, weight=1)
-        self.main_frame.rowconfigure(0, weight=1)
+        # Bindings
+        self.tree_pedidos.bind("<Double-1>", self.toggle_pago_status)
 
     def _setup_form_frame(self):
         """Configura el frame del formulario de entrada."""
@@ -112,8 +119,8 @@ class MainWindow:
         list_frame.grid(row=0, column=1, rowspan=2, padx=10, pady=10, sticky="nsew")
 
         # Configurar Treeview principal
-        columns = ('dia', 'cliente', 'sabor', 'cantidad', 'precio', 'envio', 'direccion', 'horario')
-        self.tree_pedidos = ttk.Treeview(list_frame, columns=columns, show='headings', height=20)
+        columns = ('dia', 'cliente', 'sabor', 'cantidad', 'precio', 'envio', 'direccion', 'horario', 'pago')
+        self.tree_pedidos = ttk.Treeview(list_frame, columns=columns, show='headings', height=25)
 
         # Configurar columnas
         self._configure_treeview_columns()
@@ -124,28 +131,39 @@ class MainWindow:
         self.tree_pedidos.configure(yscroll=scrollbar_y.set, xscroll=scrollbar_x.set)
 
         # Empaquetar elementos
-        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
-        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
-        self.tree_pedidos.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.tree_pedidos.grid(row=0, column=0, sticky='nsew')
+        scrollbar_y.grid(row=0, column=1, sticky='ns')
+        scrollbar_x.grid(row=1, column=0, sticky='ew')
 
         # Frame para botones de acción
-        action_buttons_frame = ttk.Frame(list_frame)
-        action_buttons_frame.pack(fill=tk.X, pady=5, side=tk.BOTTOM)
+        action_frame = ttk.Frame(list_frame)
+        action_frame.grid(row=2, column=0, pady=10, sticky='ew')
+        action_frame.columnconfigure(0, weight=1)
+        action_frame.columnconfigure(1, weight=1)
 
-        ttk.Button(action_buttons_frame, text="Editar Seleccionado", command=self.editar_pedido).pack(side=tk.LEFT, padx=5)
-        ttk.Button(action_buttons_frame, text="Eliminar Seleccionado(s)", command=self.eliminar_pedido).pack(side=tk.LEFT, padx=5)
+        ttk.Button(action_frame, text="Editar Pedido", command=self.editar_pedido).grid(row=0, column=0, padx=5)
+        ttk.Button(action_frame, text="Eliminar Pedido", command=self.eliminar_pedido).grid(row=0, column=1, padx=5)
+
+    def _setup_daily_summary_frame(self):
+        """Configura el frame para el resumen diario."""
+        daily_summary_frame = ttk.LabelFrame(self.main_frame, text="Producción por Día", padding="10")
+        daily_summary_frame.grid(row=0, column=2, rowspan=2, padx=10, pady=10, sticky="nsew")
+
+        self.text_resumen_dia = scrolledtext.ScrolledText(daily_summary_frame, wrap=tk.WORD, state='disabled', height=15, width=40)
+        self.text_resumen_dia.pack(expand=True, fill=tk.BOTH)
 
     def _configure_treeview_columns(self):
         """Configura las columnas del Treeview principal."""
         column_configs = {
-            'dia': ('Día', 80, tk.CENTER),
-            'cliente': ('Cliente', 120, tk.W),
+            'dia': ('Día', 70, tk.CENTER),
+            'cliente': ('Cliente', 110, tk.W),
             'sabor': ('Sabor', 90, tk.W),
             'cantidad': ('Cant. Total', 70, tk.E),
-            'precio': ('P. Pedido', 80, tk.E),
-            'envio': ('P. Envío', 70, tk.E),
-            'direccion': ('Dirección', 180, tk.W),
-            'horario': ('Horario', 90, tk.W)
+            'precio': ('P. Pedido', 70, tk.E),
+            'envio': ('P. Envío', 60, tk.E),
+            'direccion': ('Dirección', 150, tk.W),
+            'horario': ('Horario', 80, tk.W),
+            'pago': ('Pagó?', 50, tk.CENTER)
         }
 
         for col, (heading, width, anchor) in column_configs.items():
@@ -161,6 +179,7 @@ class MainWindow:
         self.actualizar_lista_pedidos()
         self.actualizar_resumen_produccion()
         self.actualizar_total_recaudado()
+        self.actualizar_resumen_por_dia()
 
     def actualizar_lista_pedidos(self):
         """Actualiza la lista de pedidos en el Treeview."""
@@ -181,6 +200,9 @@ class MainWindow:
                         sabor_display = "Múltiple"
                         cantidad_total = sum(item.get('cantidad', 0) for item in items)
 
+                pago_status = pedido.get('pago', 0)
+                pago_display = "Sí" if pago_status == 1 else "No"
+
                 self.tree_pedidos.insert(
                     '', 'end', iid=pedido['id'],
                     values=(
@@ -191,7 +213,8 @@ class MainWindow:
                         f"${pedido.get('precio_pedido', 0.0):.2f}",
                         f"${pedido.get('precio_envio', 0.0):.2f}",
                         pedido.get('direccion', ''),
-                        pedido.get('horario', '')
+                        pedido.get('horario', ''),
+                        pago_display
                     )
                 )
         except Exception as e:
@@ -202,22 +225,58 @@ class MainWindow:
         try:
             pedidos = self.db_manager.cargar_pedidos()
             produccion = defaultdict(int)
+            cantidad_total_produccion = 0
 
             for pedido in pedidos:
                 for item in pedido.get('items', []):
                     if item.get('sabor') and item.get('cantidad'):
-                        produccion[item['sabor']] += item['cantidad']
+                        cantidad = item['cantidad']
+                        produccion[item['sabor']] += cantidad
+                        cantidad_total_produccion += cantidad
 
-            resumen_texto = "Resumen de Producción:\n"
+            resumen_texto = "Resumen General de Producción:\n"
             if not produccion:
                 resumen_texto += "(No hay pedidos registrados)"
             else:
                 items_resumen = [f"- {cantidad} de {sabor}" for sabor, cantidad in sorted(produccion.items())]
                 resumen_texto += "\n".join(items_resumen)
+                resumen_texto += f"\n--------------------\nTotal Cookies a Producir: {cantidad_total_produccion}"
 
             self.label_resumen_produccion.config(text=resumen_texto)
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo actualizar el resumen: {e}")
+
+    def actualizar_resumen_por_dia(self):
+        """Actualiza el resumen de producción por día."""
+        try:
+            pedidos = self.db_manager.cargar_pedidos()
+            produccion_por_dia = defaultdict(lambda: defaultdict(int))
+
+            for pedido in pedidos:
+                dia = pedido.get('dia', 'Sin Día')
+                for item in pedido.get('items', []):
+                    if item.get('sabor') and item.get('cantidad'):
+                        produccion_por_dia[dia][item['sabor']] += item['cantidad']
+
+            resumen_texto = "Resumen de Producción por Día:\n\n"
+            if not produccion_por_dia:
+                resumen_texto += "(No hay pedidos registrados)"
+            else:
+                for dia in sorted(produccion_por_dia.keys()):
+                    resumen_texto += f"--- Día: {dia} ---\n"
+                    items_dia = produccion_por_dia[dia]
+                    total_dia = 0
+                    for sabor, cantidad in sorted(items_dia.items()):
+                        resumen_texto += f"  - {cantidad} de {sabor}\n"
+                        total_dia += cantidad
+                    resumen_texto += f"  Total del día: {total_dia}\n\n"
+
+            self.text_resumen_dia.configure(state='normal')
+            self.text_resumen_dia.delete('1.0', tk.END)
+            self.text_resumen_dia.insert(tk.END, resumen_texto)
+            self.text_resumen_dia.configure(state='disabled')
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo actualizar el resumen por día: {e}")
 
     def actualizar_total_recaudado(self):
         """Actualiza el total recaudado."""
@@ -227,7 +286,7 @@ class MainWindow:
                 pedido.get('precio_pedido', 0.0) + pedido.get('precio_envio', 0.0)
                 for pedido in pedidos
             )
-            self.label_total_recaudado.config(text=f"Total Recaudado: ${total:.2f}")
+            self.label_total_recaudado.config(text=f"Total Recaudado (General): ${total:.2f}")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo actualizar el total: {e}")
 
@@ -257,7 +316,6 @@ class MainWindow:
         if not sabor or sabor not in SABORES_VALIDOS:
             messagebox.showwarning("Item Inválido", f"Seleccione un sabor válido. '{sabor}' no lo es.")
             return
-
         cantidad = validar_numero(cantidad_str, tipo='int', permitir_cero=False)
         if cantidad is None:
             messagebox.showwarning("Item Inválido", "La cantidad debe ser un número entero positivo.")
@@ -266,34 +324,24 @@ class MainWindow:
         nuevo_item = {'sabor': sabor, 'cantidad': cantidad}
         self.items_pedido_actual.append(nuevo_item)
         self.actualizar_tree_items_actual()
-
         self.combo_sabor_item.set('')
         self.entry_cantidad_item.delete(0, tk.END)
         self.combo_sabor_item.focus()
 
     def quitar_item_actual(self):
-        """Quita el item seleccionado del pedido actual."""
+        """Quita un item del pedido actual."""
         seleccionados = self.tree_items_actual.selection()
         if not seleccionados:
             messagebox.showwarning("Selección Vacía", "Seleccione un item de la lista para quitar.")
             return
-
-        indices_a_quitar = []
-        for item_iid in seleccionados:
-            try:
-                indices_a_quitar.append(int(item_iid))
-            except ValueError:
-                continue
-
-        indices_a_quitar.sort(reverse=True)
+        indices_a_quitar = sorted([int(iid) for iid in seleccionados], reverse=True)
         for index in indices_a_quitar:
             if 0 <= index < len(self.items_pedido_actual):
                 del self.items_pedido_actual[index]
-
         self.actualizar_tree_items_actual()
 
     def actualizar_tree_items_actual(self):
-        """Actualiza el Treeview de items del pedido actual."""
+        """Actualiza el Treeview de items actuales."""
         for item in self.tree_items_actual.get_children():
             self.tree_items_actual.delete(item)
         for i, item in enumerate(self.items_pedido_actual):
@@ -301,7 +349,6 @@ class MainWindow:
 
     def agregar_pedido(self):
         """Agrega un nuevo pedido a la base de datos."""
-        # Recoger datos
         dia = self.entry_dia.get().strip()
         nombre = self.entry_nombre.get().strip()
         precio_pedido_str = self.entry_precio_pedido.get().strip()
@@ -309,34 +356,30 @@ class MainWindow:
         direccion = self.entry_direccion.get().strip()
         horario = self.entry_horario.get().strip()
 
-        # Validaciones
-        if not dia or not nombre:
-            messagebox.showerror("Error", "Día y Nombre son obligatorios.")
+        if not dia:
+            messagebox.showerror("Error", "El campo 'Día de Entrega' es obligatorio.")
             return
-
+        if not nombre:
+            messagebox.showerror("Error", "El campo 'Nombre del Cliente' es obligatorio.")
+            return
         if not self.items_pedido_actual:
-            messagebox.showerror("Error", "Debe agregar al menos un item al pedido.")
+            messagebox.showerror("Error", "Debe agregar al menos un item.")
             return
 
         precio_pedido = validar_numero(precio_pedido_str, tipo='float', permitir_cero=False, permitir_vacio=False)
         if precio_pedido is None:
-            messagebox.showerror("Error", "El precio del pedido debe ser un número positivo.")
+            messagebox.showerror("Error", "El 'Precio del Pedido' debe ser un número positivo.")
             return
-
         precio_envio = validar_numero(precio_envio_str, tipo='float', permitir_cero=True, permitir_vacio=True)
         if precio_envio is None:
-            messagebox.showerror("Error", "El precio del envío debe ser un número (puede ser 0).")
+            messagebox.showerror("Error", "El 'Precio del Envío' debe ser un número.")
             return
-
         if precio_envio > 0 and not direccion:
             if not messagebox.askyesno("Aviso", "Hay costo de envío pero no dirección. ¿Continuar?"):
                 return
 
         try:
-            self.db_manager.agregar_pedido(
-                dia, nombre, precio_pedido, precio_envio,
-                direccion, horario, self.items_pedido_actual
-            )
+            self.db_manager.agregar_pedido(dia, nombre, precio_pedido, precio_envio, direccion, horario, self.items_pedido_actual)
             messagebox.showinfo("Éxito", "Pedido registrado correctamente.")
             self.limpiar_campos_entrada()
             self.actualizar_todo()
@@ -347,41 +390,52 @@ class MainWindow:
         """Elimina los pedidos seleccionados."""
         seleccionados = self.tree_pedidos.selection()
         if not seleccionados:
-            messagebox.showwarning("Selección Vacía", "Por favor, seleccione el pedido que desea eliminar.")
+            messagebox.showwarning("Selección Vacía", "Seleccione el pedido a eliminar.")
             return
 
-        if messagebox.askyesno("Confirmar Eliminación", "¿Está seguro de que desea eliminar los pedidos seleccionados?"):
+        if messagebox.askyesno("Confirmar Eliminación", "¿Eliminar los pedidos seleccionados?"):
             try:
+                ids_a_eliminar = [int(iid) for iid in seleccionados]
                 count = 0
-                for pedido_id in seleccionados:
-                    if self.db_manager.eliminar_pedido(int(pedido_id)):
+                for pedido_id in ids_a_eliminar:
+                    if self.db_manager.eliminar_pedido(pedido_id):
                         count += 1
-
                 if count > 0:
-                    messagebox.showinfo("Eliminado", f"{count} Pedido(s) eliminado(s) correctamente.")
+                    messagebox.showinfo("Eliminado", f"{count} Pedido(s) eliminado(s).")
                     self.actualizar_todo()
                 else:
-                    messagebox.showwarning("Sin Cambios", "No se encontraron los pedidos seleccionados para eliminar.")
+                    messagebox.showwarning("Sin Cambios", "No se encontraron los pedidos.")
             except Exception as e:
-                messagebox.showerror("Error", f"No se pudo eliminar el pedido: {e}")
+                messagebox.showerror("Error", f"No se pudo eliminar: {e}")
 
     def editar_pedido(self):
-        """Abre la ventana de edición para el pedido seleccionado."""
+        """Abre la ventana de edición de pedido."""
         seleccionados = self.tree_pedidos.selection()
-        if not seleccionados:
-            messagebox.showwarning("Selección Vacía", "Por favor, seleccione el pedido que desea editar.")
-            return
-        if len(seleccionados) > 1:
-            messagebox.showwarning("Selección Múltiple", "Por favor, seleccione solo un pedido para editar.")
+        if not seleccionados or len(seleccionados) > 1:
+            messagebox.showwarning("Selección Inválida", "Seleccione un único pedido para editar.")
             return
 
+        pedido_id = int(seleccionados[0])
         try:
-            pedido_id = int(seleccionados[0])
             pedido = self.db_manager.obtener_pedido(pedido_id)
             if not pedido:
-                messagebox.showerror("Error", f"No se encontró el pedido con ID {pedido_id}.")
+                messagebox.showerror("Error", f"No se encontró el pedido ID {pedido_id}.")
                 return
 
-            EditWindow(self.root, self.db_manager, pedido, self.actualizar_todo)
+            edit_window = EditWindow(self.root, self.db_manager, pedido, self.actualizar_todo)
+            edit_window.grab_set()
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo cargar el pedido para editar: {e}") 
+            messagebox.showerror("Error", f"No se pudo cargar el pedido para editar: {e}")
+
+    def toggle_pago_status(self, event):
+        """Cambia el estado de pago del pedido seleccionado con doble clic."""
+        selected_items = self.tree_pedidos.selection()
+        if not selected_items or len(selected_items) > 1:
+            return
+
+        pedido_id = int(selected_items[0])
+        try:
+            self.db_manager.toggle_pago_pedido(pedido_id)
+            self.actualizar_lista_pedidos()
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo actualizar el estado de pago: {e}") 
